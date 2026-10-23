@@ -38,8 +38,48 @@ PATCH_TOOLS = ('pagemap_patch', 'rawstore_patch', 'sndcall_patch', 'faststore_pa
 STEPS = 6
 # Every tool runs without a console window (the launcher starts this script without one; each compiler / codegen
 # process would otherwise open its own black window)
-NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0) if sys.platform == 'win32' else 0
 log_file = None
+
+
+def find_runner():
+    """Auto-detects wine / Proton on Linux if running outside a Windows/Wine environment."""
+    if sys.platform == 'win32':
+        return []
+    if 'WINEPREFIX' not in os.environ:
+        pfx = os.path.expanduser('~/.local/share/tekken6_native_online/pfx')
+        if os.path.isdir(pfx):
+            os.environ['WINEPREFIX'] = pfx
+    wine = shutil.which('wine')
+    if wine:
+        return [wine]
+    home = os.path.expanduser('~')
+    candidates = [
+        os.path.join(home, '.local/share/Steam/steamapps/common/Proton - Experimental/files/bin/wine'),
+        os.path.join(home, '.local/share/Steam/steamapps/common/Proton 9.0 (Beta)/files/bin/wine'),
+        os.path.join(home, '.local/share/Steam/steamapps/common/Proton Hotfix/files/bin/wine'),
+        os.path.join(home, '.steam/steam/steamapps/common/Proton - Experimental/files/bin/wine'),
+    ]
+    for c in candidates:
+        if os.path.isfile(c) and os.access(c, os.X_OK):
+            return [c]
+    return ['wine']
+
+
+def wrap_cmd(args):
+    """Wraps Windows binaries with wine on Linux when needed."""
+    if sys.platform == 'win32' or not args:
+        return args
+    first = str(args[0])
+    if first.lower().endswith('.exe'):
+        return find_runner() + list(args)
+    return args
+
+
+def sub_run(args, **kwargs):
+    cmd = wrap_cmd(args)
+    flags = {'creationflags': NO_WINDOW} if sys.platform == 'win32' else {}
+    return subprocess.run(args=cmd, **flags, **kwargs)
 
 
 def say(msg):
@@ -61,7 +101,7 @@ def step(n, text):
 def run(args, what, cwd=None):
     """Runs a tool; its output goes to the log. A failure ends the build."""
     t0 = time.time()
-    p = subprocess.run(creationflags=NO_WINDOW, args=args, cwd=cwd or WORK, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace')
+    p = sub_run(args, cwd=cwd or WORK, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace')
     if log_file:
         log_file.write(p.stdout)
     if p.returncode:
@@ -115,13 +155,13 @@ def check_iso(iso):
     os.makedirs(tmp)
     # (names in the image are case sensitive: take Default.xex's spelling from the listing)
     listing = os.path.join(tmp, 'list.txt')
-    subprocess.run(creationflags=NO_WINDOW, args=xdvdfs('list', iso, listing), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    sub_run(xdvdfs('list', iso, listing), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     names = []
     if os.path.exists(listing):
         names = [l.split('	', 1)[1].strip() for l in open(listing, encoding='utf-8', errors='replace') if '	' in l]
     name = next((n for n in names if n.lower() == 'default.xex'), 'Default.xex')
-    p = subprocess.run(creationflags=NO_WINDOW, args=xdvdfs('extract', iso, name, os.path.join(tmp, 'Default.xex')),
-                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace')
+    p = sub_run(xdvdfs('extract', iso, name, os.path.join(tmp, 'Default.xex')),
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace')
     xex = os.path.join(tmp, 'Default.xex')
     if p.returncode or not os.path.exists(xex):
         return None, 'the file is not an Xbox 360 disc image (or the image is damaged)'
@@ -147,9 +187,18 @@ def has_fma3():
     Windows or CPU says no - the game is then compiled without it (slower float math, otherwise the same)."""
     try:
         import ctypes
-        return bool(ctypes.windll.kernel32.IsProcessorFeaturePresent(40))
+        if hasattr(ctypes, 'windll'):
+            return bool(ctypes.windll.kernel32.IsProcessorFeaturePresent(40))
     except Exception:
-        return False
+        pass
+    try:
+        if os.path.exists('/proc/cpuinfo'):
+            with open('/proc/cpuinfo', 'r', encoding='utf-8', errors='replace') as f:
+                flags = f.read().lower()
+                return 'avx2' in flags and 'fma' in flags
+    except Exception:
+        pass
+    return False
 
 
 def compile_all(cfg):
@@ -191,7 +240,7 @@ def compile_all(cfg):
 
     def one(f):
         args = [clang, *[sub(a) for a in cfg['cxx']], '-c', os.path.join(GEN, f), '-o', os.path.join(OBJ, f + '.obj')]
-        p = subprocess.run(creationflags=NO_WINDOW, args=args, cwd=WORK, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace')
+        p = sub_run(args, cwd=WORK, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace')
         return f, p.returncode, p.stdout
 
     with concurrent.futures.ThreadPoolExecutor(jobs) as ex:

@@ -12,10 +12,11 @@ netplay patches and compiles it. Generated code, the game image, extracted data 
 - `src/` - the game side: netplay (rollback snapshots, input, sound boundary, determinism), launcher status /
   commands, HUD name plates, practice frame data, internal resolution.
 - `launcher/` - the Qt launcher (matchmaking UI, game builder front end, controls, updates).
-- `builder/` - `build_native.py`, the build the player's package runs (codegen, patch tools, compile, link).
+- `builder/` - `build_native.py`, the build the player's package runs (codegen, patch tools, compile, link), supporting Windows and Linux.
 - `third_party/ggpo/` - GGPO with the project's changes (MIT, see its LICENSE).
 - `third_party/rexglue-sdk/` - the SDK (submodule); `patches/rexglue/` holds the project's SDK changes.
 - `tools/` - the patch tools of the generated code and development / test scripts.
+- `Tekken6NativeOnline.sh` / `setup_linux.sh` - Linux launcher and system integration scripts for Proton/Wine.
 
 ## Building
 

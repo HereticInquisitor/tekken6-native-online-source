@@ -43,6 +43,11 @@ need(all(os.path.isfile(f'{P}/{e}') for e in EXES), 'launcher exe or vc_redist m
 # builder (compiler, Python, prebuilt runtime - no game code)
 subprocess.check_call([sys.executable, '-I', DEV + '/tools/make_builder.py', P])
 
+# Linux runner and setup scripts
+for f in ('Tekken6NativeOnline.sh', 'setup_linux.sh', 'README_LINUX.md', 'app.png'):
+    if os.path.exists(f'{DEV}/{f}'):
+        shutil.copy(f'{DEV}/{f}', P)
+
 # files the launcher / game use at run time, and the reference profile (same for every player: it is in the state hash)
 os.makedirs(P + '/tools')
 for f in ('menu_vs.bin', 'netplay_exclude.txt'):
